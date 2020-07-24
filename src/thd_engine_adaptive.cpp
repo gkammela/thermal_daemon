@@ -1064,6 +1064,17 @@ void cthd_engine_adaptive::set_int3400_target(struct adaptive_target target) {
 		if (!psvt) {
 			return;
 		}
+
+		// Remove default controls with adaptive
+		cthd_zone *zone = search_zone("cpu");
+		if (zone) {
+			zone->set_zone_inactive();
+		}
+		zone = search_zone("B0D4");
+		if (zone) {
+			zone->set_zone_inactive();
+		}
+
 		for (int i = 0; i < (int) psvt->psvs.size(); i++) {
 			install_passive(&psvt->psvs[i]);
 		}
