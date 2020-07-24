@@ -1180,7 +1180,12 @@ int cthd_engine_adaptive::thd_engine_start(bool ignore_cpuid_check) {
 
 	if (verify_conditions()) {
 		thd_log_error("Unable to verify conditions are supported\n");
-		return THD_ERROR;
+
+		int target = evaluate_conditions();
+		if (target == -1) {
+			thd_log_error("Also unable to evaluate any conditions\n");
+			return THD_ERROR;
+		}
 	}
 
 	set_control_mode(EXCLUSIVE);
