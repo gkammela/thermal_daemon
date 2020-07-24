@@ -986,38 +986,33 @@ int cthd_engine_adaptive::install_passive(struct psv *psv) {
 	}
 
 	int temp = (psv->temp - 2732) * 100;
-	int index = 0;
-	cthd_trip_point *trip = zone->get_trip_at_index(index);
-	while (trip != NULL) {
-		trip->trip_dump();
-		if (trip->get_trip_type() == PASSIVE) {
-			int cdev_index = 0;
-			while (true) {
-				try {
-					trip_pt_cdev_t trip_cdev = trip->get_cdev_at_index(
-							cdev_index);
-					if (trip_cdev.cdev == cdev) {
-						trip->update_trip_temp(temp);
-						return 0;
-					}
-					cdev_index++;
-				} catch (const std::invalid_argument&) {
-					break;
-				}
-			}
+	int target_state = 0;
+
+	if (psv->limit.length()) {
+		if (psv->limit == "MAX") {
+			target_state = 0xfffff; // will be clipped by the cdev
+		} else if (psv->limit == "MIN") {
+			target_state = 0x00;
+		} else {
+			std::istringstream buffer(psv->limit);
+			buffer >> target_state;
 		}
-		index++;
-		trip = zone->get_trip_at_index(index);
 	}
 
-	// If we're here, there's no existing trip point for this device
-	// that includes the relevant cdev. Add one.
-	cthd_trip_point trip_pt(index, PASSIVE, temp, 0, zone->get_zone_index(),
-			sensor->get_index());
-	trip_pt.thd_trip_point_add_cdev(*cdev, cthd_trip_point::default_influence,
-			psv->sample_period / 10);
-	zone->add_trip(trip_pt);
+	cthd_trip_point trip_pt(zone->get_trip_count(),
+			PASSIVE,
+			temp, 0,
+			zone->get_zone_index(), sensor->get_index(),
+			SEQUENTIAL);
+	trip_pt.thd_trip_point_add_cdev(*cdev,
+			cthd_trip_point::default_influence,
+					psv->sample_period / 10,
+					target_state ? 1 : 0,
+					target_state * 1000,
+					NULL);
+	zone->add_trip(trip_pt, 1);
 	zone->zone_cdev_set_binded();
+	zone->set_zone_active();
 
 	return 0;
 }
@@ -1060,6 +1055,8 @@ void cthd_engine_adaptive::set_trip(std::string target, std::string argument) {
 void cthd_engine_adaptive::set_int3400_target(struct adaptive_target target) {
 	struct psvt *psvt;
 	if (target.code == "PSVT") {
+		thd_log_info("set_int3400 target %s\n", target.argument.c_str());
+
 		psvt = find_psvt(target.argument);
 		if (!psvt) {
 			return;
@@ -1075,9 +1072,37 @@ void cthd_engine_adaptive::set_int3400_target(struct adaptive_target target) {
 			zone->set_zone_inactive();
 		}
 
+		for (int i = 0; i < (int)psvt->psvs.size(); i++) {
+			struct psv *psv = &psvt->psvs[i];
+			std::string psv_zone;
+
+			size_t pos = psv->target.find_last_of(".");
+			if (pos == std::string::npos)
+				psv_zone = psv->target;
+			else
+				psv_zone = psv->target.substr(pos + 1);
+
+			while (psv_zone.back() == '_') {
+				psv_zone.pop_back();
+			}
+
+			cthd_zone *zone = search_zone(psv_zone);
+			if (zone) {
+				zone->zone_reset();
+				zone->trip_delete_all();
+			}
+		}
+
 		for (int i = 0; i < (int) psvt->psvs.size(); i++) {
 			install_passive(&psvt->psvs[i]);
 		}
+
+		thd_log_info("\n\n ZONE DUMP BEGIN\n");
+		for (unsigned int i = 0; i < zones.size(); ++i) {
+			zones[i]->zone_dump();
+		}
+		thd_log_info("\n\n ZONE DUMP END\n");
+
 	}
 	if (target.code == "PSV") {
 		set_trip(target.participant, target.argument);
