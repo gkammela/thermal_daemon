@@ -1101,10 +1101,14 @@ void cthd_engine_adaptive::set_int3400_target(struct adaptive_target target) {
 		if (zone) {
 			zone->set_zone_inactive();
 		}
-		zone = search_zone("acpitz");
-		if (zone) {
-			zone->set_zone_inactive();
+
+		for (unsigned int i = 0; i < zones.size(); ++i) {
+			cthd_zone *_zone = zones[i];
+
+			if (_zone && _zone->zone_active_status())
+				_zone->set_zone_inactive();
 		}
+
 
 		for (int i = 0; i < (int)psvt->psvs.size(); i++) {
 			struct psv *psv = &psvt->psvs[i];
